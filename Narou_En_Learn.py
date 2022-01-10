@@ -245,10 +245,8 @@ def main():
         if text == 0:
             text = ('Please Run and Wait', 'Please Run and Wait')
         # set output
-        values['text'] = text[0]
-        values['jatext'] = text[1]
-        window.Element('text').update(values['text'])
-        window.Element('jatext').update(values['jatext'])
+        window.Element('text').update(text[0])
+        window.Element('jatext').update(text[1])
 
     def set_url_cnt(base_url, cnt):
         """GUIにurlとcntを反映する
@@ -276,7 +274,6 @@ def main():
     # ウィンドウの生成
     window = sg.Window('Narou', layout, margins=(0,0), resizable=True, finalize=True)
     window["text"].expand(expand_x=True, expand_y=True)  # サイズを可変に
-    event, values = window.read()
 
     # データ取得スレッドを起動
     Thread(target=get_data_thread, args=(), daemon=True).start()
@@ -336,6 +333,7 @@ def main():
             cnt = history[base_url][1]
             window['base_url'].update(base_url)
             window['cnt'].update(cnt)
+            run(base_url, cnt, is_en)
 
     window.close()
     write_last_session(base_url, cnt)
