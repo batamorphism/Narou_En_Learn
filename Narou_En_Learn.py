@@ -9,8 +9,11 @@ from collections import defaultdict
 import csv
 import os
 import queue
+
+# setup
 job_queue = queue.Queue()
 sg.theme('DarkGrey13')
+history = defaultdict(list)
 
 
 class Trans:
@@ -21,12 +24,6 @@ class Trans:
 
     def trans(self, ptext):
         """15秒ごとに、和文を英文に翻訳してstr型で返す
-
-        Args:
-            ptext ([type]): [description]
-
-        Returns:
-            [type]: [description]
         """
         while datetime.datetime.now() - self.bef_time <= self.sleeptime:
             time.sleep(1)
@@ -49,7 +46,6 @@ def get_nobel(base_url, cnt):
     取得した小説本文は、改行で区切ったリストとして返す
     """
     # base_url = 'https://ncode.syosetu.com/n6475db/'
-
     # cnt = 532
     url = base_url + str(cnt) + '/'
     session = requests_html.HTMLSession()
@@ -100,8 +96,6 @@ def get_data(base_url, cnt):
         return True
     else:  # 取得できない場合はFalseを返す
         return False
-
-
 # urlに対して、既に取得したデータ
 get_data.text_of = defaultdict(int)
 
@@ -141,6 +135,36 @@ def write_nobel_csv(base_url, cnt, entext, jatext):
     with open(csv_path, 'a') as f:
         writer = csv.writer(f)
         writer.writerow([base_url + str(cnt), entext, jatext])
+
+
+def write_history(base_url, cnt):
+    save_dir = get_save_dir()
+    csv_name = 'NEL_history.csv'
+    csv_path = os.path.join(save_dir, csv_name)
+    now_str = datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S')
+    with open(csv_path, 'a') as f:
+        writer = csv.writer(f)
+        writer.writerow([now_str, base_url, str(cnt)])
+
+
+def read_history():
+    save_dir = get_save_dir()
+    csv_name = 'NEL_history.csv'
+    csv_path = os.path.join(save_dir, csv_name)
+    if not os.path.exists(csv_path):
+        return
+    with open(csv_path, 'r') as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if row:
+                time_str, base_url, cnt = row
+                time = datetime.datetime.strptime(time_str, '%Y/%m/%d %H:%M:%S')
+                if history[base_url]:
+                    prev_time = history[base_url][0]
+                    if prev_time < time:
+                        history[base_url] = (time, cnt)
+                else:
+                    history[base_url] = (time, cnt)
 
 
 def write_last_session(base_url, cnt):
@@ -195,24 +219,27 @@ def downloadall(base_url):
         cnt_i += 1
 
 
+def get_combo_item():
+    # 既読履歴を読み込む
+    read_history()
+    temp_history = []
+    combo_item = []
+    for base_url, (time, cnt) in history.items():
+        temp_history.append((time, base_url, cnt))
+    temp_history.sort(reverse=True)
+    for time, base_url, cnt in temp_history:
+        combo_item.append(base_url)
+    return combo_item
+
+
 def main():
-    # sg.theme('Default')   # デザインテーマの設定
-    startup()
+    # setup variables
     is_en = True
-    # ウィンドウに配置するコンポーネント
-    layout = [[sg.Text('対象の小説url'), sg.InputText('url', size=50, key='base_url'), sg.Text('EN', key='en_or_ja')],
-            [sg.Text('対象の小説和数'), sg.InputText(999, size=5, key='cnt'), sg.Text('データの保存先'), sg.Text(get_save_dir())],
-            [sg.Multiline(size=(40, 20), key='text', font=(None, 20)), sg.Multiline(size=(40, 20), key='jatext', font=(None, 20), visible = False)],
-            [sg.Button('Run', bind_return_key=True), sg.Button('Next'), sg.Button('Prev'), sg.Button('Update'), sg.Button('Ja<->En'), sg.Button('DownLoadAll')]]
 
-    # ウィンドウの生成
-    window = sg.Window('Narou', layout, margins=(0,0), resizable=True, finalize=True)
-    window["text"].expand(expand_x=True, expand_y=True)  # サイズを可変に
-
-    # データ取得スレッドを起動
-    Thread(target=get_data_thread, args=(), daemon=True).start()
-
+    # setup functions
     def run(base_url, cnt, is_en):
+        """小説をGUIに反映する
+        """
         text = get_data.text_of[base_url + cnt]
         if text == 0:
             text = ('Please Run and Wait', 'Please Run and Wait')
@@ -222,17 +249,41 @@ def main():
         window.Element('text').update(values['text'])
         window.Element('jatext').update(values['jatext'])
 
-    # 前回実行時の情報を取得
+    def set_url_cnt(base_url, cnt):
+        """GUIにurlとcntを反映する
+        """
+        window['base_url'].update(base_url)
+        window['cnt'].update(cnt)
 
-    event, values = window.read()
+    def get_url_cnt():
+        base_url = window['base_url'].Get()
+        cnt = window['cnt'].Get()
+        return base_url, cnt
+
+    # 処理開始
+    # 初期化
+    startup()
+    combo_item = get_combo_item()
     last_session = read_last_session()
 
+    # GUIの設定
+    layout = [[sg.Text('小説url'), sg.InputText('url', size=30, key='base_url'), sg.Text('履歴'), sg.Combo(combo_item, key='history', size=30, enable_events=True)],
+            [sg.Text('小説和数'), sg.InputText(999, size=5, key='cnt'), sg.Text('保存先'), sg.Text(get_save_dir()), sg.Text('EN', key='en_or_ja')],
+            [sg.Multiline(size=(40, 20), key='text', font=(None, 20)), sg.Multiline(size=(40, 20), key='jatext', font=(None, 20), visible = False)],
+            [sg.Button('Run', bind_return_key=True), sg.Button('DownLoadAll'), sg.Button('Prev'), sg.Button('Next'), sg.Button('Update'), sg.Button('Ja<->En')]]
+
+    # ウィンドウの生成
+    window = sg.Window('Narou', layout, margins=(0,0), resizable=True, finalize=True)
+    window["text"].expand(expand_x=True, expand_y=True)  # サイズを可変に
+    event, values = window.read()
+
+    # データ取得スレッドを起動
+    Thread(target=get_data_thread, args=(), daemon=True).start()
+
+    # 前回実行時の状況を反映
     if last_session:
         base_url, cnt = last_session
-        values['base_url'] = base_url
-        values['cnt'] = cnt
-        window.Element('cnt').update(values['cnt'])
-        window.Element('base_url').update(values['base_url'])
+        set_url_cnt(base_url, cnt)
         run(base_url, cnt, is_en)
 
     # イベントループ
@@ -241,39 +292,34 @@ def main():
         if event == sg.WIN_CLOSED:
             break
         elif event == 'Run':
-            # get_input
-            base_url = values['base_url']
-            cnt = values['cnt']
+            base_url, cnt = get_url_cnt()
             run(base_url, cnt, is_en)
+            write_history(base_url, cnt)
             # 小説の取得処理は、別スレッドで行う
             job_queue.put((base_url, cnt))
             job_queue.put((base_url, str(int(cnt)+1)))
-            job_queue.put((base_url, str(int(cnt)-1)))
         elif event == 'Next':
-            cnt = values['cnt']
+            _, cnt = get_url_cnt()
             cnt = str(int(cnt)+1)
-            values['cnt'] = cnt
             run(base_url, cnt, is_en)
-            window.Element('cnt').update(values['cnt'])
+            write_history(base_url, cnt)
+            window.Element('cnt').update(cnt)
             for i in range(10):
                 job_queue.put((base_url, str(int(cnt)+i)))
         elif event == 'Prev':
-            cnt = values['cnt']
+            _, cnt = get_url_cnt()
             cnt = str(int(cnt)-1)
-            values['cnt'] = cnt
+            write_history(base_url, cnt)
             run(base_url, cnt, is_en)
-            window.Element('cnt').update(values['cnt'])
+            window.Element('cnt').update(cnt)
             for i in range(10):
                 job_queue.put((base_url, str(int(cnt)-i)))
-            # window.read()
         elif event == 'Update':
-            base_url = values['base_url']
-            cnt = values['cnt']
+            base_url, cnt = get_url_cnt()
             run(base_url, cnt, is_en)
         elif event == 'Ja<->En':
             is_en = not is_en
-            base_url = values['base_url']
-            cnt = values['cnt']
+            base_url, cnt = get_url_cnt()
             window['jatext'].update(visible=(not is_en))
             window['text'].update(visible=is_en)
             if is_en:
@@ -282,11 +328,17 @@ def main():
                 window["jatext"].expand(expand_x=True, expand_y=True)
             window['en_or_ja'].update('EN' if is_en else 'JA')
         elif event == 'DownLoadAll':
-            base_url = values['base_url']
+            base_url, _ = get_url_cnt()
             Thread(target=downloadall, args=(base_url,), daemon=True).start()
+        elif event == 'history':
+            base_url = values['history']
+            cnt = history[base_url][1]
+            window['base_url'].update(base_url)
+            window['cnt'].update(cnt)
 
     window.close()
     write_last_session(base_url, cnt)
+    write_history(base_url, cnt)
     print('end')
 
 
