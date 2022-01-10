@@ -178,9 +178,10 @@ def write_last_session(base_url, cnt):
 
 
 def get_save_dir():
-    app_dir = os.environ.get("APPDATA")
+    # app_dir = os.environ.get("APPDATA")
+    home_dir = os.path.expanduser('~')
     this_dir = 'NEL_data'
-    save_dir = os.path.join(app_dir, this_dir)
+    save_dir = os.path.join(home_dir, this_dir)
     return save_dir
 
 
