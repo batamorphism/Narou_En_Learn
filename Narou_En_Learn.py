@@ -1,4 +1,5 @@
 import PySimpleGUI as sg
+from pandas import TimedeltaIndex
 import requests_html
 from googletrans import Translator
 import random
@@ -55,23 +56,29 @@ def get_nobel(base_url, cnt):
     nobel = r.html.find('#' + id, first=True)
     if nobel is None:
         return None
-    return nobel.text.split('\n')
+    return nobel.text
 
 
-def randTranslator(pjatext_list, rate):
+def randTranslator(pjatext, rate):
     # text_listのランダムな要素を英訳したものを返す
     # 翻訳する割合はrate
-    text_list = pjatext_list[:]  # イミュータブルのリストは浅いコピー
+    # テキストを。区切り、改行区切りでリストにする
+    # それぞれをrateの確率で英文にする
     tr = Trans()
 
-    # print(text_list)
-    for i, text in enumerate(text_list):
-        if len(text) >= 3 and random.random() <= rate:
-            trans_text = tr.trans(text)
-            text_list[i] = trans_text
+    text_list = []
+    for section in pjatext.split('\n'):
+        section_list = []
+        for text in section.split('。'):
+            if len(text) >= 3 and random.random() <= rate:
+                text = tr.trans(text)
+            section_list.append(text)
+        section_text = '。'.join(section_list)
+        text_list.append(section_text)
 
+    ret = '\n'.join(text_list)
     print('end_randTranslator')
-    return text_list
+    return ret
 
 
 def get_data(base_url, cnt):
@@ -86,11 +93,9 @@ def get_data(base_url, cnt):
     if get_data.text_of[base_url + cnt] != 0:
         return get_data.text_of[base_url + cnt]
 
-    jatext_list = get_nobel(base_url, cnt)
-    jatext = '\n'.join(jatext_list)
-    if jatext_list:  # 小説が取得できた場合だけ処理する
-        entext_list = randTranslator(jatext_list, 0.1)
-        entext = '\n'.join(entext_list)
+    jatext = get_nobel(base_url, cnt)
+    if jatext:  # 小説が取得できた場合だけ処理する
+        entext = randTranslator(jatext, 0.1)
         get_data.text_of[base_url + cnt] = (entext, jatext)
         write_nobel_csv(base_url, cnt, entext, jatext)
         return True
